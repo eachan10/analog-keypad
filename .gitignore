@@ -1,0 +1,22 @@
+.vscode
+CMakeFiles
+
+// compilation stuff
+*.bin
+*.dis
+*.elf
+*.elf.map
+*.hex
+*.uf2
+
+// build tools
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+elf2uf2
+generated
+build
+
+// pico sdk
+pico-sdk
+pioasm
