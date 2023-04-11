@@ -20,6 +20,9 @@
 #define KEY_ADC_INPUT_L   1       // ADC Input to select for left key
 #define ADC_BUF_SHIFT     5       // bits needed to shift to average the buffer instead of doing division
 #define ADC_BUF_SIZE      0x1 << ADC_BUF_SHIFT      // 2^5
+
+
+// configurable options
 #define THRESHOLD_MULTIPLIER  3 / 4
 
 
@@ -36,7 +39,7 @@ struct {
 } key_buffers;
 
 
-// value the buffer
+// value the buffer is set to when key is set
 #define MAX_KEY_BUFFER 100
 
 
@@ -50,7 +53,7 @@ typedef struct {
 struct {
   AdcRange left;
   AdcRange right;
-} key_adc_ranges;
+} adc_ranges;
 
 struct {
   uint32_t left;
@@ -74,19 +77,21 @@ int main() {
   // usb
   tusb_init();
 
-  // keypad config
-  keys.left = HID_KEY_Z;
-  keys.right = HID_KEY_X;
-  key_adc_ranges.left.max = 1873;
-  key_adc_ranges.left.min = 1020;
-  key_adc_ranges.left.threshold = (1873 - 1020) * THRESHOLD_MULTIPLIER + 1020;
-  key_adc_ranges.left.reset_gap = (1873 - 1020) / 50;
-  key_adc_ranges.right.max = 1892;
-  key_adc_ranges.right.min = 1069;
-  key_adc_ranges.right.threshold = (1892 - 1069) * THRESHOLD_MULTIPLIER + 1069;
-  key_adc_ranges.right.reset_gap = (1892 - 1069) / 50;
+  // keypad config/setup
+  adc_ranges.left.max = 2910;
+  adc_ranges.left.min = 1110;
+  adc_ranges.right.max = 2985;
+  adc_ranges.right.min = 1175;
   key_buffers.left = 0;
   key_buffers.right = 0;
+
+  // configurable options
+  keys.left = HID_KEY_PERIOD;
+  keys.right = HID_KEY_SLASH;
+  adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * THRESHOLD_MULTIPLIER + adc_ranges.left.min;
+  adc_ranges.left.reset_gap = (adc_ranges.left.max - adc_ranges.left.min) / 50;
+  adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * THRESHOLD_MULTIPLIER + adc_ranges.right.min;
+  adc_ranges.right.reset_gap = (adc_ranges.right.max - adc_ranges.right.min) / 50;
 
   // adc
   uint16_t adc_buf[ADC_BUF_SIZE];
@@ -103,51 +108,13 @@ int main() {
     adc_select_input(KEY_ADC_INPUT_L);
     adc_capture(adc_buf, ADC_BUF_SIZE);
     average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.left, ADC_BUF_SHIFT);
-
-    // if (key_buffers.left == 0) {                                                               // currently unset
-    //   if (adc_average.left > key_adc_ranges.left.max) {
-    //     key_adc_ranges.left.max = adc_average.left;
-    //   }
-    //   else if (adc_average.left < key_adc_ranges.left.max - key_adc_ranges.left.reset_gap      // moved down enuff from max
-    //     && adc_average.left < key_adc_ranges.left.threshold) {                                 // below threshold
-    //     key_buffers.left = MAX_KEY_BUFFER;
-    //     key_adc_ranges.left.min = adc_average.left;
-    //   }
-    // } else {                                                                                   // currently set
-    //   if (adc_average.left < key_adc_ranges.left.min) {
-    //     key_adc_ranges.left.min = adc_average.left;
-    //   }
-    //   else if (adc_average.left > key_adc_ranges.left.min + key_adc_ranges.left.reset_gap) {
-    //     key_buffers.left--;
-    //     key_adc_ranges.left.max = adc_average.left;
-    //   }
-    // }
-    process_key(&key_buffers.left, &key_adc_ranges.left, adc_average.left);
+    process_key(&key_buffers.left, &adc_ranges.left, adc_average.left);
 
     // right key
     adc_select_input(KEY_ADC_INPUT_R);
     adc_capture(adc_buf, ADC_BUF_SIZE);
     average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.right, ADC_BUF_SHIFT);
-
-    // if (key_buffers.right == 0) {                                                               // currently unset
-    //   if (adc_average.right > key_adc_ranges.right.max) {
-    //     key_adc_ranges.right.max = adc_average.right;
-    //   }
-    //   else if (adc_average.right < key_adc_ranges.right.max - key_adc_ranges.right.reset_gap      // moved down enuff from max
-    //     && adc_average.right < key_adc_ranges.right.threshold) {                                 // below threshold
-    //     key_buffers.right = MAX_KEY_BUFFER;
-    //     key_adc_ranges.right.min = adc_average.right;
-    //   }
-    // } else {                                                                                   // currently set
-    //   if (adc_average.right < key_adc_ranges.right.min) {
-    //     key_adc_ranges.right.min = adc_average.right;
-    //   }
-    //   else if (adc_average.right > key_adc_ranges.right.min + key_adc_ranges.right.reset_gap) {
-    //     key_buffers.right--;
-    //     key_adc_ranges.right.max = adc_average.right;
-    //   }
-    // }
-    process_key(&key_buffers.right, &key_adc_ranges.right, adc_average.right);
+    process_key(&key_buffers.right, &adc_ranges.right, adc_average.right);
   }
 }
 
@@ -203,7 +170,6 @@ static void hid_task()
 // Return zero will cause the stack to STALL request
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
 {
-  // TODO not Implemented
   (void) itf;
   (void) report_id;
   (void) report_type;
