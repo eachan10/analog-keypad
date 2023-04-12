@@ -28,17 +28,19 @@
 
 
 // keycodes to send for each key
-struct {
+typedef struct {
   uint8_t left;
   uint8_t right;
-} keys;
+} Keys;
+Keys keys;
 
 // buffers to debounce adc
 // this is shared between the hid_task and process_keys
-struct {
+typedef struct {
   uint8_t left;
   uint8_t right;
-} key_buffers;
+} KeyBuffers;
+KeyBuffers key_buffers;
 
 
 auto_init_mutex(key_buffers_mutex);
@@ -55,18 +57,20 @@ typedef struct {
   uint16_t reset_gap;  // gap between max and current reading to set
 } AdcRange;
 
-struct {
+typedef struct {
   AdcRange left;
   AdcRange right;
-} adc_ranges;
+} AdcRanges;
+AdcRanges adc_ranges;
 
-struct {
+typedef struct {
   uint32_t left;
   uint32_t right;
-} adc_average;
+} AdcAverage;
+AdcAverage adc_average;
 
 
-static void hid_task();
+static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys);
 void hid_task_empty();
 
 // have to set adc pin with adc_select_input before running this
@@ -76,8 +80,8 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val)
 
 static bool is_valid_hid_key_code(uint8_t keycode);
 
-static void usb_task(mutex_t *key_buf_mut);
-static void adc_task(mutex_t *key_buf_mut);
+static void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys);
+static void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges);
 
 void core1_entry();
 
@@ -112,7 +116,7 @@ int main() {
   multicore_launch_core1(core1_entry);
 
   while (1) {
-    usb_task(&key_buffers_mutex);
+    usb_task(&key_buffers_mutex, &key_buffers, &keys);
   }
 }
 
@@ -123,33 +127,33 @@ int main() {
 
 void core1_entry() {
   while (1) {
-    adc_task(&key_buffers_mutex);
+    adc_task(&key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges);
   }
 }
 
 // USB Task
-static void usb_task(mutex_t *key_buf_mut) {
-  hid_task(key_buf_mut);
+static void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys) {
+  hid_task(key_buf_mut, key_buf, keys);
   tud_task();
 }
 
 // ADC Task
-static void adc_task(mutex_t *key_buf_mut) {
+static void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges) {
     uint16_t adc_buf[ADC_BUF_SIZE];
     // left key read + average
     adc_select_input(KEY_ADC_INPUT_L);
     adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.left, ADC_BUF_SHIFT);
+    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->left, ADC_BUF_SHIFT);
 
     // right key read + average
     adc_select_input(KEY_ADC_INPUT_R);
     adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.right, ADC_BUF_SHIFT);
+    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->right, ADC_BUF_SHIFT);
 
     // process adc values into key buffers
     mutex_enter_blocking(key_buf_mut);
-    process_key(&key_buffers.left, &adc_ranges.left, adc_average.left);
-    process_key(&key_buffers.right, &adc_ranges.right, adc_average.right);
+    process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left);
+    process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right);
     mutex_exit(key_buf_mut);
 }
 
@@ -158,7 +162,7 @@ static void adc_task(mutex_t *key_buf_mut) {
 // USB HID
 //--------------------------------------------------------------------+
 
-static void hid_task(mutex_t *key_buf_mut)
+static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
 {
   // Keyboard is at interface 0
   static absolute_time_t last_report_time = 0;
@@ -177,15 +181,15 @@ static void hid_task(mutex_t *key_buf_mut)
     static bool has_key = false;
 
     mutex_enter_blocking(key_buf_mut);
-    if ( key_buffers.left || key_buffers.right )
+    if ( key_buf->left || key_buf->right )
     {
       uint8_t keycode[6] = { 0 };
 
-      if (key_buffers.left) {
-        keycode[0] = keys.left;
+      if (key_buf->left) {
+        keycode[0] = keys->left;
       }
-      if (key_buffers.right) {
-        keycode[1] = keys.right;
+      if (key_buf->right) {
+        keycode[1] = keys->right;
       }
       mutex_exit(key_buf_mut);
 
