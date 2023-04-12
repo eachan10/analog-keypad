@@ -70,7 +70,7 @@ static void hid_task();
 void hid_task_empty();
 
 // have to set adc pin with adc_select_input before running this
-void adc_capture(uint16_t *buf, size_t buf_size);
+void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t buf_size);
 static void average_buffer(const uint16_t *buf, size_t buf_size, uint32_t *average, uint8_t div_shift);
 static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val);
 
