@@ -1,5 +1,5 @@
 set(TARGET ${PROJECT_NAME})
-add_executable(${TARGET} main.c usb_descriptors.c)
+add_executable(${TARGET} main.c usb_descriptors.c adc.c usb.c)
 
 target_include_directories(${TARGET} PUBLIC
     ${PROJECT_SOURCE_DIR}/include

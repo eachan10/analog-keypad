@@ -13,75 +13,23 @@
 
 
 #include "usb_descriptors.h"
+#include "adc.h"
+#include "usb.h"
 
 
-#define KEY_PIN_R         26      // ADC 0 pin
-#define KEY_ADC_INPUT_R   0       // ADC Input to select for right key
-#define KEY_PIN_L         27      // ADC 1 pin
-#define KEY_ADC_INPUT_L   1       // ADC Input to select for left key
-#define ADC_BUF_SHIFT     5       // bits needed to shift to average the buffer instead of doing division
-#define ADC_BUF_SIZE      0x1 << ADC_BUF_SHIFT      // 2^5
-
-
-// configurable options
-#define THRESHOLD_MULTIPLIER  3 / 4
-
-
-// keycodes to send for each key
-typedef struct {
-  uint8_t left;
-  uint8_t right;
-} Keys;
 Keys keys;
-
-// buffers to debounce adc
-// this is shared between the hid_task and process_keys
-typedef struct {
-  uint8_t left;
-  uint8_t right;
-} KeyBuffers;
 KeyBuffers key_buffers;
-
 
 auto_init_mutex(key_buffers_mutex);
 
 
-// value the buffer is set to when key is set
-#define MAX_KEY_BUFFER 100
-
-
-typedef struct {
-  uint16_t min;        // lowest adc reading the key has reached while set
-  uint16_t max;        // highest adc reading the key has reached while unset
-  uint16_t threshold;  // maximum adc reading for the key to be set
-  uint16_t reset_gap;  // gap between max and current reading to set
-} AdcRange;
-
-typedef struct {
-  AdcRange left;
-  AdcRange right;
-} AdcRanges;
+AdcAverage adc_average;
 AdcRanges adc_ranges;
 
-typedef struct {
-  uint32_t left;
-  uint32_t right;
-} AdcAverage;
-AdcAverage adc_average;
 
-
-static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys);
 void hid_task_empty();
 
-// have to set adc pin with adc_select_input before running this
-void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t buf_size);
-static void average_buffer(const uint16_t *buf, size_t buf_size, uint32_t *average, uint8_t div_shift);
-static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val);
-
 static bool is_valid_hid_key_code(uint8_t keycode);
-
-static void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys);
-static void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges);
 
 void core1_entry();
 
@@ -131,82 +79,6 @@ void core1_entry() {
   }
 }
 
-// USB Task
-static void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys) {
-  hid_task(key_buf_mut, key_buf, keys);
-  tud_task();
-}
-
-// ADC Task
-static void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges) {
-    uint16_t adc_buf[ADC_BUF_SIZE];
-    // left key read + average
-    adc_select_input(KEY_ADC_INPUT_L);
-    adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->left, ADC_BUF_SHIFT);
-
-    // right key read + average
-    adc_select_input(KEY_ADC_INPUT_R);
-    adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->right, ADC_BUF_SHIFT);
-
-    // process adc values into key buffers
-    mutex_enter_blocking(key_buf_mut);
-    process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left);
-    process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right);
-    mutex_exit(key_buf_mut);
-}
-
-
-//--------------------------------------------------------------------+
-// USB HID
-//--------------------------------------------------------------------+
-
-static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
-{
-  // Keyboard is at interface 0
-  static absolute_time_t last_report_time = 0;
-  absolute_time_t current_report_time = get_absolute_time();
-  if (absolute_time_diff_us(last_report_time, current_report_time) < 1000) return;   // report rate of ~1000Hz so don't need to constantly process keys
-  last_report_time = current_report_time;
-
-  if ( tud_hid_n_ready(0) )
-  {
-    // wake up host if we are in suspend mode
-    // and REMOTE_WAKEUP feature is enabled by host
-    if ( tud_suspended()) {
-      tud_remote_wakeup();
-    }
-    // use to avoid send multiple consecutive zero report for keyboard
-    static bool has_key = false;
-
-    mutex_enter_blocking(key_buf_mut);
-    if ( key_buf->left || key_buf->right )
-    {
-      uint8_t keycode[6] = { 0 };
-
-      if (key_buf->left) {
-        keycode[0] = keys->left;
-      }
-      if (key_buf->right) {
-        keycode[1] = keys->right;
-      }
-      mutex_exit(key_buf_mut);
-
-      tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, keycode);
-
-      has_key = true;
-    }else
-    {
-      mutex_exit(key_buf_mut);
-      // send empty key report if previously has key pressed
-      if (has_key) tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, NULL);
-      has_key = false;
-    }
-  }
-}
-
-
 // Invoked when received GET_REPORT control request
 // Application must fill buffer report's content and return its length.
 // Return zero will cause the stack to STALL request
@@ -224,13 +96,6 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
-  // bufsize is 1 for some reason when doing bufsize == 1
-  // but bufsize passed into memcpy still has it copy all 16 bytes
-  // I really don't know why it does this, but I will just ignore it and assume it will
-  // always be 16 bytes because that what it seems to do fine
-  // and i can make sure that on application side I always send 16 bytes
-  // TODO set LED based on CAPLOCK, NUMLOCK etc...
-
   // Interface 1 is the IO interface -> buffer should be 16 bytes
 
   uint8_t new_buf[64] = { 0 };
@@ -257,54 +122,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       break;
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);
-  }
-}
-
-
-
-//--------------------------------------------------------------------+
-// ADC
-//--------------------------------------------------------------------+
-
-void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t buf_size) {
-  adc_fifo_setup(true, false, 0, false, false);
-  adc_run(true);
-  for (int i = 0; i < buf_size; i++) {
-    buf[i] = adc_fifo_get_blocking();
-  }
-  adc_run(false);
-  adc_fifo_drain();
-}
-
-
-// Helper func to average my adc capture buffers
-static void average_buffer(const uint16_t *buf, size_t buf_size, uint32_t *average, uint8_t div_shift) {
-  *average = 0;
-  for (int i = 0; i < buf_size; i++) {
-    *average += buf[i];
-  }
-  *average >>= div_shift;
-}
-
-
-static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val) {
-  if (*key_buf == 0) {                                                               // currently unset
-    if (adc_val > adc_range->max) {
-      adc_range->max = adc_val;
-    }
-    else if (adc_val < adc_range->max - adc_range->reset_gap      // moved down enuff from max
-      && adc_val < adc_range->threshold) {                                 // below threshold
-      *key_buf = MAX_KEY_BUFFER;
-      adc_range->min = adc_val;
-    }
-  } else {                                                                                   // currently set
-    if (adc_val < adc_range->min) {
-      adc_range->min = adc_val;
-    }
-    else if (adc_val > adc_range->min + adc_range->reset_gap) {
-      (*key_buf)--;
-      adc_range->max = adc_val;
-    }
   }
 }
 
