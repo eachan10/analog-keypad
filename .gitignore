@@ -1,7 +1,7 @@
 .vscode
 CMakeFiles
 
-// compilation stuff
+// generated
 *.bin
 *.dis
 *.elf
