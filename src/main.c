@@ -4,6 +4,7 @@
 #include <time.h>
 
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 
@@ -33,10 +34,14 @@ struct {
 } keys;
 
 // buffers to debounce adc
+// this is shared between the hid_task and process_keys
 struct {
   uint8_t left;
   uint8_t right;
 } key_buffers;
+
+
+auto_init_mutex(key_buffers_mutex);
 
 
 // value the buffer is set to when key is set
@@ -71,6 +76,11 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val)
 
 static bool is_valid_hid_key_code(uint8_t keycode);
 
+static void usb_task(mutex_t *key_buf_mut);
+static void adc_task(mutex_t *key_buf_mut);
+
+void core1_entry();
+
 
 int main() {
   stdio_init_all();
@@ -80,10 +90,10 @@ int main() {
   tusb_init();
 
   // keypad config/setup
-  adc_ranges.left.max = 2910;
-  adc_ranges.left.min = 1110;
-  adc_ranges.right.max = 2985;
-  adc_ranges.right.min = 1175;
+  adc_ranges.left.max = 3054;
+  adc_ranges.left.min = 1283;
+  adc_ranges.right.max = 3124;
+  adc_ranges.right.min = 1392;
   key_buffers.left = 0;
   key_buffers.right = 0;
 
@@ -95,29 +105,52 @@ int main() {
   adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * THRESHOLD_MULTIPLIER + adc_ranges.right.min;
   adc_ranges.right.reset_gap = (adc_ranges.right.max - adc_ranges.right.min) / 50;
 
-  // adc
-  uint16_t adc_buf[ADC_BUF_SIZE];
-
   adc_init();
   adc_gpio_init(KEY_PIN_L);
   adc_gpio_init(KEY_PIN_R);
+  
+  multicore_launch_core1(core1_entry);
 
   while (1) {
-    tud_task();
-    hid_task();
+    usb_task(&key_buffers_mutex);
+  }
+}
 
-    // left key
+
+//--------------------------------------------------------------------+
+// Tasks
+//--------------------------------------------------------------------+
+
+void core1_entry() {
+  while (1) {
+    adc_task(&key_buffers_mutex);
+  }
+}
+
+// USB Task
+static void usb_task(mutex_t *key_buf_mut) {
+  hid_task(key_buf_mut);
+  tud_task();
+}
+
+// ADC Task
+static void adc_task(mutex_t *key_buf_mut) {
+    uint16_t adc_buf[ADC_BUF_SIZE];
+    // left key read + average
     adc_select_input(KEY_ADC_INPUT_L);
     adc_capture(adc_buf, ADC_BUF_SIZE);
     average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.left, ADC_BUF_SHIFT);
-    process_key(&key_buffers.left, &adc_ranges.left, adc_average.left);
 
-    // right key
+    // right key read + average
     adc_select_input(KEY_ADC_INPUT_R);
     adc_capture(adc_buf, ADC_BUF_SIZE);
     average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average.right, ADC_BUF_SHIFT);
+
+    // process adc values into key buffers
+    mutex_enter_blocking(key_buf_mut);
+    process_key(&key_buffers.left, &adc_ranges.left, adc_average.left);
     process_key(&key_buffers.right, &adc_ranges.right, adc_average.right);
-  }
+    mutex_exit(key_buf_mut);
 }
 
 
@@ -125,7 +158,7 @@ int main() {
 // USB HID
 //--------------------------------------------------------------------+
 
-static void hid_task()
+static void hid_task(mutex_t *key_buf_mut)
 {
   // Keyboard is at interface 0
   static absolute_time_t last_report_time = 0;
@@ -143,6 +176,7 @@ static void hid_task()
     // use to avoid send multiple consecutive zero report for keyboard
     static bool has_key = false;
 
+    mutex_enter_blocking(key_buf_mut);
     if ( key_buffers.left || key_buffers.right )
     {
       uint8_t keycode[6] = { 0 };
@@ -153,12 +187,14 @@ static void hid_task()
       if (key_buffers.right) {
         keycode[1] = keys.right;
       }
+      mutex_exit(key_buf_mut);
 
       tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, keycode);
 
       has_key = true;
     }else
     {
+      mutex_exit(key_buf_mut);
       // send empty key report if previously has key pressed
       if (has_key) tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, NULL);
       has_key = false;

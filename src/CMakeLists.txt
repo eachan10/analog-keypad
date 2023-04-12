@@ -9,6 +9,7 @@ target_include_directories(${TARGET} PUBLIC
 # Link to pico_stdlib (gpio, time, etc. functions)
 target_link_libraries(${PROJECT_NAME} 
     pico_stdlib
+    pico_multicore
     tinyusb_device
     tinyusb_board
     hardware_adc
