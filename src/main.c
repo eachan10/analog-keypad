@@ -69,6 +69,8 @@ void adc_capture(uint16_t *buf, size_t buf_size);
 static void average_buffer(const uint16_t *buf, size_t buf_size, uint32_t *average, uint8_t div_shift);
 static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val);
 
+static bool is_valid_hid_key_code(uint8_t keycode);
+
 
 int main() {
   stdio_init_all();
@@ -192,11 +194,28 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
   // Interface 1 is the IO interface -> buffer should be 16 bytes
 
   uint8_t new_buf[64] = { 0 };
+  uint8_t k1, k2;
   // first byte of the report will be used to indicate which 'command' will be given to the keypad
-  if (itf == 1 && report_type == 0 && report_id == 0 && *buffer == 0x11) {
-    memcpy(new_buf, buffer, bufsize);
-    memcpy(&new_buf[2], &adc_average.left, sizeof(adc_average.left));
-    memcpy(&new_buf[2+sizeof(adc_average.left)], &adc_average.right, sizeof(adc_average.right));
+  if (itf == 1 && report_type == 0 && report_id == 0) {
+    switch (*buffer) {
+    case 0x11:
+      // return values read by adc
+      memcpy(new_buf, buffer, bufsize);
+      memcpy(&new_buf[2], &adc_average.left, sizeof(adc_average.left));
+      memcpy(&new_buf[2+sizeof(adc_average.left)], &adc_average.right, sizeof(adc_average.right));
+      break;
+    case 0x12:
+      // set keys left and right should be in bytes 1 and 2
+      k1 = buffer[1];
+      k2 = buffer[2];
+      if (is_valid_hid_key_code(k1) && is_valid_hid_key_code(k2)) {
+        keys.left = k1;
+        keys.right = k2;
+        memcpy(new_buf, buffer, bufsize);  // echo on success
+      }
+      // returned report is all 0 if invalid keycodes
+      break;
+    }
     tud_hid_n_report(1, 0, new_buf, bufsize);
   }
 }
@@ -247,4 +266,9 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val)
       adc_range->max = adc_val;
     }
   }
+}
+
+
+static bool is_valid_hid_key_code(uint8_t keycode) {
+  return (0x04 <= keycode && keycode <= 0xA4) || (0xE0 <= keycode && keycode <= 0xE7);
 }
