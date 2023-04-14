@@ -25,11 +25,17 @@ auto_init_mutex(key_buffers_mutex);
 
 AdcAverage adc_average;
 AdcRanges adc_ranges;
+struct {
+  uint8_t threshold_percentage;
+  uint8_t reset_percentage;
+} adc_config;
 
 
 void hid_task_empty();
 
 static bool is_valid_hid_key_code(uint8_t keycode);
+static void recalculate_threshold();
+static void recalculate_reset_distance();
 
 void core1_entry();
 
@@ -50,12 +56,14 @@ int main() {
   key_buffers.right = 0;
 
   // configurable options
+  adc_config.threshold_percentage = 75;
+  adc_config.reset_percentage = 2;
   keys.left = HID_KEY_PERIOD;
   keys.right = HID_KEY_SLASH;
-  adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * THRESHOLD_MULTIPLIER + adc_ranges.left.min;
-  adc_ranges.left.reset_gap = (adc_ranges.left.max - adc_ranges.left.min) / 50;
-  adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * THRESHOLD_MULTIPLIER + adc_ranges.right.min;
-  adc_ranges.right.reset_gap = (adc_ranges.right.max - adc_ranges.right.min) / 50;
+  adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * adc_config.threshold_percentage / 100 + adc_ranges.left.min;
+  adc_ranges.left.reset_gap = (adc_ranges.left.max - adc_ranges.left.min) * adc_config.reset_percentage / 100;
+  adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * adc_config.threshold_percentage / 100 + adc_ranges.right.min;
+  adc_ranges.right.reset_gap = (adc_ranges.right.max - adc_ranges.right.min) * adc_config.reset_percentage / 100;
 
   adc_init();
   adc_gpio_init(KEY_PIN_L);
@@ -121,12 +129,43 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       // set threshold for actuation
       if (buffer[1] <= 95u) {
         mutex_enter_blocking(&key_buffers_mutex);
-        adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * buffer[1] / 100 + adc_ranges.left.min;
-        adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * buffer[1] / 100 + adc_ranges.right.min;
+        adc_config.threshold_percentage = buffer[1];
+        recalculate_threshold();
         mutex_exit(&key_buffers_mutex);
         memcpy(new_buf, buffer, bufsize);  // echo on success
       }
       // returned report is all 0 if invalid percentage value
+      break;
+    case 0x14:
+      // set reset distance
+      if (buffer[1] >= 2 && buffer[1] <= 80) {
+        mutex_enter_blocking(&key_buffers_mutex);
+        adc_config.reset_percentage = buffer[1];
+        recalculate_reset_distance();
+        mutex_exit(&key_buffers_mutex);
+        memcpy(new_buf, buffer, bufsize);
+      }
+      break;
+    case 0x15:
+      // callibrate max and recalculate all values
+      mutex_enter_blocking(&key_buffers_mutex);
+      memcpy(&adc_ranges.left.max, &buffer[1], sizeof(uint16_t));
+      memcpy(&adc_ranges.right.max, &buffer[3], sizeof(uint16_t));
+      recalculate_reset_distance();
+      recalculate_threshold();
+      mutex_exit(&key_buffers_mutex);
+      memcpy(new_buf, buffer, bufsize);  // echo on success
+      break;
+    case 0x16:
+      // callibrate min and recalculate all values;
+      mutex_enter_blocking(&key_buffers_mutex);
+      memcpy(&adc_ranges.left.min, &buffer[1], sizeof(uint16_t));
+      memcpy(&adc_ranges.right.min, &buffer[3], sizeof(uint16_t));
+      recalculate_reset_distance();
+      recalculate_threshold();
+      mutex_exit(&key_buffers_mutex);
+      memcpy(new_buf, buffer, bufsize);  // echo on success
+      break;
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);
   }
@@ -135,4 +174,14 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
 static bool is_valid_hid_key_code(uint8_t keycode) {
   return (0x04 <= keycode && keycode <= 0xA4) || (0xE0 <= keycode && keycode <= 0xE7);
+}
+
+static void recalculate_threshold() {
+  adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * adc_config.threshold_percentage / 100 + adc_ranges.left.min;
+  adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * adc_config.threshold_percentage / 100 + adc_ranges.right.min;
+}
+
+static void recalculate_reset_distance() {
+  adc_ranges.left.reset_gap = (adc_ranges.left.max - adc_ranges.left.min) * adc_config.reset_percentage / 100;
+  adc_ranges.right.reset_gap = (adc_ranges.right.max - adc_ranges.right.min) * adc_config.reset_percentage / 100;
 }
