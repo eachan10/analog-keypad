@@ -99,7 +99,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
   // Interface 1 is the IO interface -> buffer should be 16 bytes
 
   uint8_t new_buf[64] = { 0 };
-  uint8_t k1, k2;
   // first byte of the report will be used to indicate which 'command' will be given to the keypad
   if (itf == 1 && report_type == 0 && report_id == 0) {
     switch (*buffer) {
@@ -111,15 +110,23 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       break;
     case 0x12:
       // set keys left and right should be in bytes 1 and 2
-      k1 = buffer[1];
-      k2 = buffer[2];
-      if (is_valid_hid_key_code(k1) && is_valid_hid_key_code(k2)) {
-        keys.left = k1;
-        keys.right = k2;
+      if (is_valid_hid_key_code(buffer[1]) && is_valid_hid_key_code(buffer[2])) {
+        keys.left = buffer[1];
+        keys.right = buffer[2];
         memcpy(new_buf, buffer, bufsize);  // echo on success
       }
       // returned report is all 0 if invalid keycodes
       break;
+    case 0x13:
+      // set threshold for actuation
+      if (buffer[1] <= 95u) {
+        mutex_enter_blocking(&key_buffers_mutex);
+        adc_ranges.left.threshold = (adc_ranges.left.max - adc_ranges.left.min) * buffer[1] / 100 + adc_ranges.left.min;
+        adc_ranges.right.threshold = (adc_ranges.right.max - adc_ranges.right.min) * buffer[1] / 100 + adc_ranges.right.min;
+        mutex_exit(&key_buffers_mutex);
+        memcpy(new_buf, buffer, bufsize);  // echo on success
+      }
+      // returned report is all 0 if invalid percentage value
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);
   }
