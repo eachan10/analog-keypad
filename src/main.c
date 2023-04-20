@@ -138,7 +138,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       break;
     case 0x14:
       // set reset distance
-      if (buffer[1] >= 2 && buffer[1] <= 80) {
+      if (buffer[1] >= 2u && buffer[1] <= 80u) {
         mutex_enter_blocking(&key_buffers_mutex);
         adc_config.reset_percentage = buffer[1];
         recalculate_reset_distance();
@@ -166,6 +166,36 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       mutex_exit(&key_buffers_mutex);
       memcpy(new_buf, buffer, bufsize);  // echo on success
       break;
+    case 0x01:
+      // get current config settings
+      mutex_enter_blocking(&key_buffers_mutex);
+      // byte 1 -> left keycode
+      // byte 2 -> right keycode
+      // byte 3 -> threshold percentage
+      // byte 4 -> reset percentage
+      // byte 5-6 -> left max
+      // byte 7-8 -> left min
+      // byte 9-10 -> right max
+      // byte 11-12 -> right min
+      {
+        size_t i = 1;
+        memcpy(&new_buf[i], &keys.left, sizeof(keys.left));
+        i += sizeof(keys.left);
+        memcpy(&new_buf[i], &keys.right, sizeof(keys.right));
+        i += sizeof(keys.right);
+        memcpy(&new_buf[i], &adc_config.threshold_percentage, sizeof(adc_config.threshold_percentage));
+        i += sizeof(adc_config.threshold_percentage);
+        memcpy(&new_buf[i], &adc_config.reset_percentage, sizeof(adc_config.reset_percentage));
+        i += sizeof(adc_config.reset_percentage);
+        memcpy(&new_buf[i], &adc_ranges.left.max, sizeof(adc_ranges.left.max));
+        i += sizeof(adc_ranges.left.max);
+        memcpy(&new_buf[i], &adc_ranges.left.min, sizeof(adc_ranges.left.min));
+        i += sizeof(adc_ranges.left.min);
+        memcpy(&new_buf[i], &adc_ranges.right.max, sizeof(adc_ranges.right.max));
+        i += sizeof(adc_ranges.right.max);
+        memcpy(&new_buf[i], &adc_ranges.right.min, sizeof(adc_ranges.right.min));
+      }
+      mutex_exit(&key_buffers_mutex);
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);
   }
