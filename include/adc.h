@@ -13,14 +13,14 @@
 #define KEY_ADC_INPUT_R   0       // ADC Input to select for right key
 #define KEY_PIN_L         27      // ADC 1 pin
 #define KEY_ADC_INPUT_L   1       // ADC Input to select for left key
-#define ADC_BUF_SHIFT     5       // bits needed to shift to average the buffer instead of doing division
-#define ADC_BUF_SIZE      0x1 << ADC_BUF_SHIFT      // 2^5
+#define ADC_BUF_SHIFT     3       // bits needed to shift to average the buffer instead of doing division
+#define ADC_BUF_SIZE      0x1 << ADC_BUF_SHIFT      // 2^3
 
 // configurable options
 #define THRESHOLD_MULTIPLIER  3 / 4
 
 // value the buffer is set to when key is set
-#define MAX_KEY_BUFFER 100
+#define MAX_KEY_BUFFER 10
 
 // buffers to debounce adc
 // this is shared between the hid_task and process_keys

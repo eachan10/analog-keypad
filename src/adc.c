@@ -22,12 +22,13 @@ static void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t buf_size) {
 
 
 // Helper func to average my adc capture buffers
-static void average_buffer(const uint16_t *buf, size_t buf_size, uint32_t *average, uint8_t div_shift) {
-  *average = 0;
+static uint32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div_shift) {
+  uint32_t avg = 0;
   for (int i = 0; i < buf_size; i++) {
-    *average += buf[i];
+    avg += buf[i];
   }
-  *average >>= div_shift;
+  avg >>= div_shift;
+  return avg;
 }
 
 
@@ -54,22 +55,21 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val)
 
 // ADC Task
 void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges) {
-    uint16_t adc_buf[ADC_BUF_SIZE];
+    uint16_t adc_buf1[ADC_BUF_SIZE];
+    uint16_t adc_buf2[ADC_BUF_SIZE];
     // left key read + average
     adc_select_input(KEY_ADC_INPUT_L);
-    adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->left, ADC_BUF_SHIFT);
+    adc_capture(adc_buf1, ADC_BUF_SIZE);
 
     // right key read + average
     adc_select_input(KEY_ADC_INPUT_R);
-    adc_capture(adc_buf, ADC_BUF_SIZE);
-    average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->right, ADC_BUF_SHIFT);
+    adc_capture(adc_buf2, ADC_BUF_SIZE);
 
     // process adc values into key buffers
-    // mutex_enter_blocking(key_buf_mut);
     xSemaphoreTake(key_buf_mut, portMAX_DELAY);
+    adc_average->left = average_buffer(adc_buf1, ADC_BUF_SIZE, ADC_BUF_SHIFT);
+    adc_average->right = average_buffer(adc_buf2, ADC_BUF_SIZE, ADC_BUF_SHIFT);
     process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left);
     process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right);
-    // mutex_exit(key_buf_mut);
     xSemaphoreGive(key_buf_mut);
 }
