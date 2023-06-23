@@ -53,7 +53,7 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val)
 }
 
 // ADC Task
-void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges) {
+void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges) {
     uint16_t adc_buf[ADC_BUF_SIZE];
     // left key read + average
     adc_select_input(KEY_ADC_INPUT_L);
@@ -66,8 +66,10 @@ void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average
     average_buffer(adc_buf, ADC_BUF_SIZE, &adc_average->right, ADC_BUF_SHIFT);
 
     // process adc values into key buffers
-    mutex_enter_blocking(key_buf_mut);
+    // mutex_enter_blocking(key_buf_mut);
+    xSemaphoreTake(key_buf_mut, portMAX_DELAY);
     process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left);
     process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right);
-    mutex_exit(key_buf_mut);
+    // mutex_exit(key_buf_mut);
+    xSemaphoreGive(key_buf_mut);
 }

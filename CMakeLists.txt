@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.12)
 
 # Include build functions from Pico SDK
 # include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-include (${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
+include (pico_sdk_import.cmake)
+include (FreeRTOS_Kernel_import.cmake)
 
 # Set name of project (as PROJECT_NAME) and C/C++ standards
 project(Wooting C CXX ASM)

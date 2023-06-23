@@ -10,7 +10,7 @@
 // USB HID
 //--------------------------------------------------------------------+
 
-static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
+static void hid_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys)
 {
   // Keyboard is at interface 0
   static absolute_time_t last_report_time = 0;
@@ -28,7 +28,8 @@ static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
     // use to avoid send multiple consecutive zero report for keyboard
     static bool has_key = false;
 
-    mutex_enter_blocking(key_buf_mut);
+    // mutex_enter_blocking(key_buf_mut);
+    xSemaphoreTake(key_buf_mut, portMAX_DELAY);
     if ( key_buf->left || key_buf->right )
     {
       uint8_t keycode[6] = { 0 };
@@ -39,14 +40,16 @@ static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
       if (key_buf->right) {
         keycode[1] = keys->right;
       }
-      mutex_exit(key_buf_mut);
+      // mutex_exit(key_buf_mut);
+      xSemaphoreGive(key_buf_mut);
 
       tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, keycode);
 
       has_key = true;
     }else
     {
-      mutex_exit(key_buf_mut);
+      // mutex_exit(key_buf_mut);
+      xSemaphoreGive(key_buf_mut);
       // send empty key report if previously has key pressed
       if (has_key) tud_hid_n_keyboard_report(0, REPORT_ID_KEYBOARD, 0, NULL);
       has_key = false;
@@ -55,7 +58,7 @@ static void hid_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys)
 }
 
 // USB Task
-void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys) {
+void usb_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys) {
   hid_task(key_buf_mut, key_buf, keys);
   tud_task();
 }

@@ -8,6 +8,9 @@
 
 #include "adc.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 
 #ifndef USB_STUFF
 #define USB_STUFF
@@ -18,6 +21,6 @@ typedef struct {
   uint8_t right;
 } Keys;
 
-void usb_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, Keys *keys);
+void usb_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys);
 
 #endif

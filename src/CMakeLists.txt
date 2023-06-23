@@ -13,6 +13,8 @@ target_link_libraries(${PROJECT_NAME}
     tinyusb_device
     tinyusb_board
     hardware_adc
+    FreeRTOS-Kernel
+    FreeRTOS-Kernel-Heap1
 )
 
 # Create map/bin/hex/uf2 files

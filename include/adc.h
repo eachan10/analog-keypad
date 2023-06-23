@@ -3,6 +3,9 @@
 #include "pico/stdlib.h"
 #include "pico/sync.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #ifndef ADC_STUFF
 #define ADC_STUFF
 
@@ -43,6 +46,6 @@ typedef struct {
   uint32_t right;
 } AdcAverage;
 
-void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges);
+void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges);
 
 #endif
