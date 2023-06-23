@@ -40,6 +40,8 @@ struct {
 } adc_config;
 
 
+void hid_task_empty();
+
 static bool is_valid_hid_key_code(uint8_t keycode);
 static void recalculate_threshold();
 static void recalculate_reset_distance();
@@ -79,6 +81,8 @@ int main() {
 
   key_buffers_mutex = xSemaphoreCreateMutex();
   
+  // multicore_launch_core1(core1_entry);
+
   xTaskCreate(
     adc_task_entry,
     "ADC_TASK",
@@ -100,6 +104,7 @@ int main() {
   vTaskStartScheduler();
 
   while (1) {
+    // usb_task(&key_buffers_mutex, &key_buffers, &keys);
   }
 }
 
@@ -113,7 +118,7 @@ void adc_task_entry(void *pvParameters) {
   const TickType_t xFrequency = 1;
   LastWakeTime = xTaskGetTickCount();
   while (1) {
-    xTaskDelayUntil(&LastWakeTime, xFrequency);
+    vTaskDelayUntil(&LastWakeTime, xFrequency);
     adc_task(key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges);
   }
 }
@@ -123,7 +128,7 @@ void usb_task_entry(void *pvParameters) {
   const TickType_t xFrequency = 10;
   LastWakeTime = xTaskGetTickCount();
   while (1) {
-    xTaskDelayUntil(&LastWakeTime, xFrequency);
+    vTaskDelayUntil(&LastWakeTime, xFrequency);
     usb_task(key_buffers_mutex, &key_buffers, &keys);
   }
 }
@@ -154,10 +159,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x11:
       // return values read by adc
       memcpy(new_buf, buffer, bufsize);
-      xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
       memcpy(&new_buf[2], &adc_average.left, sizeof(adc_average.left));
       memcpy(&new_buf[2+sizeof(adc_average.left)], &adc_average.right, sizeof(adc_average.right));
-      xSemaphoreGive(key_buffers_mutex);
       break;
     case 0x12:
       // set keys left and right should be in bytes 1 and 2
@@ -197,6 +200,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       // callibrate max and recalculate all values
       // mutex_enter_blocking(&key_buffers_mutex);
       xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+      memcpy(&adc_ranges.left.max, &buffer[1], sizeof(uint16_t));
+      memcpy(&adc_ranges.right.max, &buffer[3], sizeof(uint16_t));
       adc_config.left_max = adc_ranges.left.max;
       adc_config.right_max = adc_ranges.right.max;
       recalculate_reset_distance();
@@ -209,6 +214,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       // callibrate min and recalculate all values;
       // mutex_enter_blocking(&key_buffers_mutex);
       xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+      memcpy(&adc_ranges.left.min, &buffer[1], sizeof(uint16_t));
+      memcpy(&adc_ranges.right.min, &buffer[3], sizeof(uint16_t));
       adc_config.left_min = adc_ranges.left.min;
       adc_config.right_min = adc_ranges.right.min;
       recalculate_reset_distance();
