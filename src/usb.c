@@ -13,11 +13,6 @@
 static void hid_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys)
 {
   // Keyboard is at interface 0
-  static absolute_time_t last_report_time = 0;
-  absolute_time_t current_report_time = get_absolute_time();
-  if (absolute_time_diff_us(last_report_time, current_report_time) < 1000) return;   // report rate of ~1000Hz so don't need to constantly process keys
-  last_report_time = current_report_time;
-
   if ( tud_hid_n_ready(0) )
   {
     // wake up host if we are in suspend mode
