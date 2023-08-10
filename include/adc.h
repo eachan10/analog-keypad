@@ -1,3 +1,6 @@
+#ifndef __ADC_STUFF__
+#define __ADC_STUFF__
+
 #include <stdint.h>
 
 #include "pico/stdlib.h"
@@ -6,13 +9,10 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 
-#ifndef ADC_STUFF
-#define ADC_STUFF
-
-#define KEY_PIN_R         26      // ADC 0 pin
-#define KEY_ADC_INPUT_R   0       // ADC Input to select for right key
-#define KEY_PIN_L         27      // ADC 1 pin
-#define KEY_ADC_INPUT_L   1       // ADC Input to select for left key
+#define KEY_PIN_L         26      // ADC 0 pin
+#define KEY_ADC_INPUT_L   0       // ADC Input to select for right key
+#define KEY_PIN_R         27      // ADC 1 pin
+#define KEY_ADC_INPUT_R   1       // ADC Input to select for left key
 #define ADC_BUF_SHIFT     3       // bits needed to shift to average the buffer instead of doing division
 #define ADC_BUF_SIZE      0x1 << ADC_BUF_SHIFT      // 2^3
 
@@ -21,6 +21,15 @@
 
 // value the buffer is set to when key is set
 #define MAX_KEY_BUFFER 10
+
+typedef struct {
+  uint8_t threshold_percentage;
+  uint8_t reset_percentage;
+  uint16_t left_max;
+  uint16_t left_min;
+  uint16_t right_max;
+  uint16_t right_min;
+} AdcConfig;
 
 // buffers to debounce adc
 // this is shared between the hid_task and process_keys
@@ -46,6 +55,6 @@ typedef struct {
   uint32_t right;
 } AdcAverage;
 
-void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges);
+void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *adc_config);
 
 #endif

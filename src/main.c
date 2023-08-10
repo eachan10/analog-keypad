@@ -30,14 +30,8 @@ SemaphoreHandle_t key_buffers_mutex;
 
 AdcAverage adc_average;
 AdcRanges adc_ranges;
-struct {
-  uint8_t threshold_percentage;
-  uint8_t reset_percentage;
-  uint16_t left_max;
-  uint16_t left_min;
-  uint16_t right_max;
-  uint16_t right_min;
-} adc_config;
+
+AdcConfig adc_config;
 
 
 void hid_task_empty();
@@ -58,10 +52,10 @@ int main() {
   tusb_init();
 
   // keypad config/setup
-  adc_config.left_max = 3054;
-  adc_config.left_min = 1283;
-  adc_config.right_max = 3124;
-  adc_config.right_min = 1392;
+  adc_config.left_max = 3197;
+  adc_config.left_min = 266;
+  adc_config.right_max = 3315;
+  adc_config.right_min = 308;
   key_buffers.left = 0;
   key_buffers.right = 0;
 
@@ -119,7 +113,7 @@ void adc_task_entry(void *pvParameters) {
   LastWakeTime = xTaskGetTickCount();
   while (1) {
     vTaskDelayUntil(&LastWakeTime, xFrequency);
-    adc_task(key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges);
+    adc_task(key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges, &adc_config);
   }
 }
 
