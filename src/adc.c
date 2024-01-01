@@ -8,8 +8,8 @@
 
 
 // offset caused by other key being pressed all the way down to key sensor value
-#define KEY_INTERFERENCE_L 270 
-#define KEY_INTERFERENCE_R 500 
+#define KEY_INTERFERENCE_L 300 
+#define KEY_INTERFERENCE_R 300 
 
 
 //--------------------------------------------------------------------+
@@ -28,7 +28,7 @@ static void __not_in_flash_func(adc_capture)(uint16_t *buf, size_t buf_size) {
 
 
 // Helper func to average my adc capture buffers
-static uint32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div_shift) {
+static int32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div_shift) {
   uint32_t avg = 0;
   for (int i = 0; i < buf_size; i++) {
     avg += buf[i];
@@ -38,7 +38,7 @@ static uint32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div
 }
 
 
-static void process_key(uint8_t *key_buf, AdcRange *adc_range, uint32_t adc_val) {
+static void process_key(uint8_t *key_buf, AdcRange *adc_range, int32_t adc_val) {
   if (*key_buf == 0) {                                                               // currently unset
     if (adc_val > adc_range->max) {
       adc_range->max = adc_val;
@@ -82,19 +82,25 @@ void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *ad
 
     // distance from max height to current
     l_gap = (int32_t)adc_config->left_max - (int32_t)adc_average->left;
-    if (l_gap < 0) l_gap = 0;
-    else if (l_gap > l_range) l_gap = l_range;
+    if (l_gap < 0) {
+      l_gap = 0;
+    }
     r_gap = (int32_t)adc_config->right_max - (int32_t)adc_average->right;
-    if (r_gap < 0) r_gap = 0;
-    else if (r_gap > r_range) r_gap = r_range;
-    l_off = KEY_INTERFERENCE_L * r_gap / r_range;         // increase offset as other key goes down
-    l_off = l_off * (l_range - l_gap / 2) / l_range;    // decrease offset as current key goes down
-    r_off = KEY_INTERFERENCE_R * l_gap / l_range / 2;
-    r_off = r_off * (r_range - r_gap / 2) / r_range;
-    if (l_off > adc_average->left) l_off = adc_average->left;
-    if (r_off > adc_average->right) r_off = adc_average->right;
+    if (r_gap < 0) {
+      r_gap = 0;
+    }
+    l_off = KEY_INTERFERENCE_L * r_gap / r_range;     // increase offset as other key goes down
+    r_off = KEY_INTERFERENCE_R * l_gap / l_range;
+    // if (l_off > adc_average->left) l_off = adc_average->left;
+    // if (r_off > adc_average->right) r_off = adc_average->right;
     adc_average->left -= l_off;
+    if (adc_average->left < adc_config->left_min) {
+      adc_average->left = adc_config->left_min;
+    }
     adc_average->right -= r_off;
+    if (adc_average->right < adc_config->right_min) {
+      adc_average->right = adc_config->right_min;
+    }
 
     process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left);
     process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right);

@@ -52,10 +52,10 @@ int main() {
   tusb_init();
 
   // keypad config/setup
-  adc_config.left_max = 3197;
-  adc_config.left_min = 266;
-  adc_config.right_max = 3315;
-  adc_config.right_min = 308;
+  adc_config.left_max = 3235;
+  adc_config.left_min = 160;
+  adc_config.right_max = 3350;
+  adc_config.right_min = 140;
   key_buffers.left = 0;
   key_buffers.right = 0;
 
