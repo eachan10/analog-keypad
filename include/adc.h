@@ -23,12 +23,12 @@
 #define MAX_KEY_BUFFER 10
 
 typedef struct {
-  uint8_t threshold_percentage;
-  uint8_t reset_percentage;
-  uint16_t left_max;
-  uint16_t left_min;
-  uint16_t right_max;
-  uint16_t right_min;
+  int16_t threshold_percentage;
+  int16_t reset_percentage;
+  int32_t left_max;
+  int32_t left_min;
+  int32_t right_max;
+  int32_t right_min;
 } AdcConfig;
 
 // buffers to debounce adc
@@ -39,10 +39,10 @@ typedef struct {
 } KeyBuffers;
 
 typedef struct {
-  uint16_t min;        // lowest adc reading the key has reached while set
-  uint16_t max;        // highest adc reading the key has reached while unset
-  uint16_t threshold;  // maximum adc reading for the key to be set
-  uint16_t reset_gap;  // gap between max and current reading to set
+  int32_t min;        // lowest adc reading the key has reached while set
+  int32_t max;        // highest adc reading the key has reached while unset
+  int32_t threshold;  // maximum adc reading for the key to be set
+  int32_t reset_gap;  // gap between max and current reading to set
 } AdcRange;
 
 typedef struct {
@@ -51,8 +51,8 @@ typedef struct {
 } AdcRanges;
 
 typedef struct {
-  uint32_t left;
-  uint32_t right;
+  int32_t left;
+  int32_t right;
 } AdcAverage;
 
 void adc_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *adc_config);
