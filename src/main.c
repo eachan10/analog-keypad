@@ -26,19 +26,19 @@ KeyBuffers key_buffers;
 // auto_init_mutex(key_buffers_mutex);
 
 SemaphoreHandle_t key_buffers_mutex;
+SemaphoreHandle_t config_mutex;
 
 
 AdcAverage adc_average;
 AdcRanges adc_ranges;
 
-AdcConfig adc_config;
+AdcConfig left_config;
+AdcConfig right_config;
 
 
 void hid_task_empty();
 
 static bool is_valid_hid_key_code(uint8_t keycode);
-static void recalculate_threshold();
-static void recalculate_reset_distance();
 
 void adc_task_entry(void *pvParameters);
 void usb_task_entry(void *pvParameters);
@@ -52,28 +52,32 @@ int main() {
   tusb_init();
 
   // keypad config/setup
-  adc_config.left_max = 3235;
-  adc_config.left_min = 160;
-  adc_config.right_max = 3350;
-  adc_config.right_min = 140;
+  left_config.max = 3081;
+  left_config.min = 160;
+  right_config.max = 3205;
+  right_config.min = 140;
   key_buffers.left = 0;
   key_buffers.right = 0;
 
   // configurable options
-  adc_config.threshold_percentage = 65;
-  adc_config.reset_percentage = 4;
+  left_config.threshold = 75.0;
+  left_config.reset = 5.0;
+  right_config.threshold = 75.0;
+  right_config.reset = 5.0;
   keys.left = HID_KEY_PERIOD;
   keys.right = HID_KEY_SLASH;
-  adc_ranges.left.threshold = (adc_config.left_max - adc_config.left_min) * adc_config.threshold_percentage / 100 + adc_config.left_min;
-  adc_ranges.left.reset_gap = (adc_config.left_max - adc_config.left_min) * adc_config.reset_percentage / 100;
-  adc_ranges.right.threshold = (adc_config.right_max - adc_config.right_min) * adc_config.threshold_percentage / 100 + adc_config.right_min;
-  adc_ranges.right.reset_gap = (adc_config.right_max - adc_config.right_min) * adc_config.reset_percentage / 100;
+
+  adc_ranges.left.max = left_config.max;
+  adc_ranges.left.min = left_config.max;
+  adc_ranges.right.max = right_config.max;
+  adc_ranges.right.max = right_config.max;
 
   adc_init();
   adc_gpio_init(KEY_PIN_L);
   adc_gpio_init(KEY_PIN_R);
 
   key_buffers_mutex = xSemaphoreCreateMutex();
+  config_mutex = xSemaphoreCreateMutex();
   
   // multicore_launch_core1(core1_entry);
 
@@ -113,7 +117,7 @@ void adc_task_entry(void *pvParameters) {
   LastWakeTime = xTaskGetTickCount();
   while (1) {
     vTaskDelayUntil(&LastWakeTime, xFrequency);
-    adc_task(key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges, &adc_config);
+    adc_task(key_buffers_mutex, config_mutex, &key_buffers, &adc_average, &adc_ranges, &left_config, &right_config);
   }
 }
 
@@ -153,14 +157,18 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x11:
       // return values read by adc
       memcpy(new_buf, buffer, bufsize);
+      xSemaphoreTake(config_mutex, portMAX_DELAY);
       memcpy(&new_buf[2], &adc_average.left, sizeof(adc_average.left));
       memcpy(&new_buf[2+sizeof(adc_average.left)], &adc_average.right, sizeof(adc_average.right));
+      xSemaphoreGive(config_mutex);
       break;
     case 0x12:
       // set keys left and right should be in bytes 1 and 2
       if (is_valid_hid_key_code(buffer[1]) && is_valid_hid_key_code(buffer[2])) {
+        xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
         keys.left = buffer[1];
         keys.right = buffer[2];
+        xSemaphoreGive(key_buffers_mutex);
         memcpy(new_buf, buffer, bufsize);  // echo on success
       }
       // returned report is all 0 if invalid keycodes
@@ -168,12 +176,10 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x13:
       // set threshold for actuation
       if (buffer[1] <= 95u) {
-        // mutex_enter_blocking(&key_buffers_mutex);
-        xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
-        adc_config.threshold_percentage = buffer[1];
-        recalculate_threshold();
-        // mutex_exit(&key_buffers_mutex);
-        xSemaphoreGive(key_buffers_mutex);
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+        left_config.threshold = buffer[1];
+        right_config.threshold = buffer[1];
+        xSemaphoreGive(config_mutex);
         memcpy(new_buf, buffer, bufsize);  // echo on success
       }
       // returned report is all 0 if invalid percentage value
@@ -181,47 +187,37 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x14:
       // set reset distance
       if (buffer[1] >= 2u && buffer[1] <= 80u) {
-        // mutex_enter_blocking(&key_buffers_mutex);
-        xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
-        adc_config.reset_percentage = buffer[1];
-        recalculate_reset_distance();
-        // mutex_exit(&key_buffers_mutex);
-        xSemaphoreGive(key_buffers_mutex);
+        xSemaphoreTake(config_mutex, portMAX_DELAY);
+        left_config.reset = buffer[1];
+        right_config.reset = buffer[1];
+        xSemaphoreGive(config_mutex);
         memcpy(new_buf, buffer, bufsize);
       }
       break;
     case 0x15:
       // callibrate max and recalculate all values
-      // mutex_enter_blocking(&key_buffers_mutex);
-      xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+      xSemaphoreTake(config_mutex, portMAX_DELAY);
       memcpy(&adc_ranges.left.max, &buffer[1], sizeof(uint16_t));
       memcpy(&adc_ranges.right.max, &buffer[3], sizeof(uint16_t));
-      adc_config.left_max = adc_ranges.left.max;
-      adc_config.right_max = adc_ranges.right.max;
-      recalculate_reset_distance();
-      recalculate_threshold();
-      // mutex_exit(&key_buffers_mutex);
-      xSemaphoreGive(key_buffers_mutex);
+      left_config.max = adc_ranges.left.max;
+      right_config.max = adc_ranges.right.max;
+      xSemaphoreGive(config_mutex);
       memcpy(new_buf, buffer, bufsize);  // echo on success
       break;
     case 0x16:
       // callibrate min and recalculate all values;
-      // mutex_enter_blocking(&key_buffers_mutex);
-      xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+      xSemaphoreTake(config_mutex, portMAX_DELAY);
       memcpy(&adc_ranges.left.min, &buffer[1], sizeof(uint16_t));
       memcpy(&adc_ranges.right.min, &buffer[3], sizeof(uint16_t));
-      adc_config.left_min = adc_ranges.left.min;
-      adc_config.right_min = adc_ranges.right.min;
-      recalculate_reset_distance();
-      recalculate_threshold();
-      // mutex_exit(&key_buffers_mutex);
-      xSemaphoreGive(key_buffers_mutex);
+      left_config.min = adc_ranges.left.min;
+      right_config.min = adc_ranges.right.min;
+      xSemaphoreGive(config_mutex);
       memcpy(new_buf, buffer, bufsize);  // echo on success
       break;
     case 0x01:
       // get current config settings
       // mutex_enter_blocking(&key_buffers_mutex);
-      xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+      xSemaphoreTake(config_mutex, portMAX_DELAY);
       // byte 1 -> left keycode
       // byte 2 -> right keycode
       // byte 3 -> threshold percentage
@@ -236,20 +232,20 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         i += sizeof(keys.left);
         memcpy(&new_buf[i], &keys.right, sizeof(keys.right));
         i += sizeof(keys.right);
-        memcpy(&new_buf[i], &adc_config.threshold_percentage, sizeof(adc_config.threshold_percentage));
-        i += sizeof(adc_config.threshold_percentage);
-        memcpy(&new_buf[i], &adc_config.reset_percentage, sizeof(adc_config.reset_percentage));
-        i += sizeof(adc_config.reset_percentage);
-        memcpy(&new_buf[i], &adc_config.left_max, sizeof(adc_config.left_max));
-        i += sizeof(adc_config.left_max);
-        memcpy(&new_buf[i], &adc_config.left_min, sizeof(adc_config.left_min));
-        i += sizeof(adc_config.left_min);
-        memcpy(&new_buf[i], &adc_config.right_max, sizeof(adc_config.right_max));
-        i += sizeof(adc_config.right_max);
-        memcpy(&new_buf[i], &adc_config.right_min, sizeof(adc_config.right_min));
+        memcpy(&new_buf[i], &left_config.threshold, sizeof(left_config.threshold));
+        i += sizeof(left_config.threshold);
+        memcpy(&new_buf[i], &left_config.reset, sizeof(left_config.reset));
+        i += sizeof(left_config.reset);
+        memcpy(&new_buf[i], &left_config.max, sizeof(left_config.max));
+        i += sizeof(left_config.max);
+        memcpy(&new_buf[i], &left_config.min, sizeof(left_config.min));
+        i += sizeof(left_config.min);
+        memcpy(&new_buf[i], &right_config.max, sizeof(right_config.max));
+        i += sizeof(right_config.max);
+        memcpy(&new_buf[i], &right_config.min, sizeof(right_config.max));
       }
       // mutex_exit(&key_buffers_mutex);
-      xSemaphoreGive(key_buffers_mutex);
+      xSemaphoreGive(config_mutex);
       break;
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);
@@ -259,14 +255,4 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
 static bool is_valid_hid_key_code(uint8_t keycode) {
   return (0x04 <= keycode && keycode <= 0xA4) || (0xE0 <= keycode && keycode <= 0xE7);
-}
-
-static void recalculate_threshold() {
-  adc_ranges.left.threshold = (adc_config.left_max - adc_config.left_min) * adc_config.threshold_percentage / 100 + adc_config.left_min;
-  adc_ranges.right.threshold = (adc_config.right_max - adc_config.right_min) * adc_config.threshold_percentage / 100 + adc_config.right_min;
-}
-
-static void recalculate_reset_distance() {
-  adc_ranges.left.reset_gap = (adc_config.left_max - adc_config.left_min) * adc_config.reset_percentage / 100;
-  adc_ranges.right.reset_gap = (adc_config.right_max - adc_config.right_min) * adc_config.reset_percentage / 100;
 }
