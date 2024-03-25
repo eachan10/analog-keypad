@@ -67,10 +67,10 @@ int main() {
   keys.left = HID_KEY_PERIOD;
   keys.right = HID_KEY_SLASH;
 
-  adc_ranges.left.max = left_config.max;
-  adc_ranges.left.min = left_config.max;
-  adc_ranges.right.max = right_config.max;
-  adc_ranges.right.max = right_config.max;
+  adc_ranges.left.max = 100;
+  adc_ranges.left.min = 0;
+  adc_ranges.right.max = 100;
+  adc_ranges.right.min = 0;
 
   adc_init();
   adc_gpio_init(KEY_PIN_L);
@@ -113,7 +113,7 @@ int main() {
 
 void adc_task_entry(void *pvParameters) {
   TickType_t LastWakeTime;
-  const TickType_t xFrequency = 1;
+  const TickType_t xFrequency = 2;
   LastWakeTime = xTaskGetTickCount();
   while (1) {
     vTaskDelayUntil(&LastWakeTime, xFrequency);
@@ -173,47 +173,47 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
       }
       // returned report is all 0 if invalid keycodes
       break;
-    case 0x13:
-      // set threshold for actuation
-      if (buffer[1] <= 95u) {
-        xSemaphoreTake(config_mutex, portMAX_DELAY);
-        left_config.threshold = buffer[1];
-        right_config.threshold = buffer[1];
-        xSemaphoreGive(config_mutex);
-        memcpy(new_buf, buffer, bufsize);  // echo on success
-      }
-      // returned report is all 0 if invalid percentage value
-      break;
-    case 0x14:
-      // set reset distance
-      if (buffer[1] >= 2u && buffer[1] <= 80u) {
-        xSemaphoreTake(config_mutex, portMAX_DELAY);
-        left_config.reset = buffer[1];
-        right_config.reset = buffer[1];
-        xSemaphoreGive(config_mutex);
-        memcpy(new_buf, buffer, bufsize);
-      }
-      break;
-    case 0x15:
-      // callibrate max and recalculate all values
-      xSemaphoreTake(config_mutex, portMAX_DELAY);
-      memcpy(&adc_ranges.left.max, &buffer[1], sizeof(uint16_t));
-      memcpy(&adc_ranges.right.max, &buffer[3], sizeof(uint16_t));
-      left_config.max = adc_ranges.left.max;
-      right_config.max = adc_ranges.right.max;
-      xSemaphoreGive(config_mutex);
-      memcpy(new_buf, buffer, bufsize);  // echo on success
-      break;
-    case 0x16:
-      // callibrate min and recalculate all values;
-      xSemaphoreTake(config_mutex, portMAX_DELAY);
-      memcpy(&adc_ranges.left.min, &buffer[1], sizeof(uint16_t));
-      memcpy(&adc_ranges.right.min, &buffer[3], sizeof(uint16_t));
-      left_config.min = adc_ranges.left.min;
-      right_config.min = adc_ranges.right.min;
-      xSemaphoreGive(config_mutex);
-      memcpy(new_buf, buffer, bufsize);  // echo on success
-      break;
+    // case 0x13:
+    //   // set threshold for actuation
+    //   if (buffer[1] <= 95u) {
+    //     xSemaphoreTake(config_mutex, portMAX_DELAY);
+    //     left_config.threshold = buffer[1];
+    //     right_config.threshold = buffer[1];
+    //     xSemaphoreGive(config_mutex);
+    //     memcpy(new_buf, buffer, bufsize);  // echo on success
+    //   }
+    //   // returned report is all 0 if invalid percentage value
+    //   break;
+    // case 0x14:
+    //   // set reset distance
+    //   if (buffer[1] >= 2u && buffer[1] <= 80u) {
+    //     xSemaphoreTake(config_mutex, portMAX_DELAY);
+    //     left_config.reset = buffer[1];
+    //     right_config.reset = buffer[1];
+    //     xSemaphoreGive(config_mutex);
+    //     memcpy(new_buf, buffer, bufsize);
+    //   }
+    //   break;
+    // case 0x15:
+    //   // callibrate max and recalculate all values
+    //   xSemaphoreTake(config_mutex, portMAX_DELAY);
+    //   memcpy(&adc_ranges.left.max, &buffer[1], sizeof(uint16_t));
+    //   memcpy(&adc_ranges.right.max, &buffer[3], sizeof(uint16_t));
+    //   left_config.max = adc_ranges.left.max;
+    //   right_config.max = adc_ranges.right.max;
+    //   xSemaphoreGive(config_mutex);
+    //   memcpy(new_buf, buffer, bufsize);  // echo on success
+    //   break;
+    // case 0x16:
+    //   // callibrate min and recalculate all values;
+    //   xSemaphoreTake(config_mutex, portMAX_DELAY);
+    //   memcpy(&adc_ranges.left.min, &buffer[1], sizeof(uint16_t));
+    //   memcpy(&adc_ranges.right.min, &buffer[3], sizeof(uint16_t));
+    //   left_config.min = adc_ranges.left.min;
+    //   right_config.min = adc_ranges.right.min;
+    //   xSemaphoreGive(config_mutex);
+    //   memcpy(new_buf, buffer, bufsize);  // echo on success
+    //   break;
     case 0x01:
       // get current config settings
       // mutex_enter_blocking(&key_buffers_mutex);
@@ -232,17 +232,18 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         i += sizeof(keys.left);
         memcpy(&new_buf[i], &keys.right, sizeof(keys.right));
         i += sizeof(keys.right);
-        memcpy(&new_buf[i], &left_config.threshold, sizeof(left_config.threshold));
-        i += sizeof(left_config.threshold);
-        memcpy(&new_buf[i], &left_config.reset, sizeof(left_config.reset));
-        i += sizeof(left_config.reset);
+        // memcpy(&new_buf[i], &left_config.threshold, sizeof(left_config.threshold));
+        // i += sizeof(left_config.threshold);
+        // memcpy(&new_buf[i], &left_config.reset, sizeof(left_config.reset));
+        // i += sizeof(left_config.reset);
         memcpy(&new_buf[i], &left_config.max, sizeof(left_config.max));
         i += sizeof(left_config.max);
         memcpy(&new_buf[i], &left_config.min, sizeof(left_config.min));
         i += sizeof(left_config.min);
-        memcpy(&new_buf[i], &right_config.max, sizeof(right_config.max));
+        memcpy(&new_buf[i], &right_config.min, sizeof(right_config.min));
         i += sizeof(right_config.max);
-        memcpy(&new_buf[i], &right_config.min, sizeof(right_config.max));
+        memcpy(&new_buf[i], &right_config.max, sizeof(right_config.max));
+        i += sizeof(right_config.min);
       }
       // mutex_exit(&key_buffers_mutex);
       xSemaphoreGive(config_mutex);

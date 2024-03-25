@@ -10,7 +10,7 @@
 // USB HID
 //--------------------------------------------------------------------+
 
-static void hid_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys)
+static void hid_task(SemaphoreHandle_t key_buf_mut, const KeyBuffers *key_buf, const Keys *keys)
 {
   // Keyboard is at interface 0
   if ( tud_hid_n_ready(0) )
@@ -53,7 +53,7 @@ static void hid_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *k
 }
 
 // USB Task
-void usb_task(SemaphoreHandle_t key_buf_mut, KeyBuffers *key_buf, Keys *keys) {
+void usb_task(SemaphoreHandle_t key_buf_mut, const KeyBuffers *key_buf, const Keys *keys) {
   hid_task(key_buf_mut, key_buf, keys);
   tud_task();
 }

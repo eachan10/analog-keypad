@@ -36,11 +36,11 @@ static int32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div_
     avg += buf[i];
   }
   avg >>= div_shift;
-  return avg;
+  return (int32_t)avg;
 }
 
 
-static void process_key(uint8_t *key_buf, AdcRange *adc_range, int32_t adc_val, AdcConfig *adc_config) {
+static void process_key(uint8_t *key_buf, AdcRange *adc_range, const int32_t adc_val, const AdcConfig *adc_config) {
   // map inverse square distance to linear function from 0 to 100
   double percentage = 100 - 100 * sqrt((adc_config->max - (double)adc_val) / (adc_config->max - adc_config->min));
 
@@ -65,7 +65,7 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, int32_t adc_val, 
 }
 
 // ADC Task
-void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config) {
+void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, const AdcConfig *left_config, const AdcConfig *right_config) {
     uint16_t adc_buf1[ADC_BUF_SIZE];
     uint16_t adc_buf2[ADC_BUF_SIZE];
     // left key read + average
@@ -86,13 +86,13 @@ void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, Key
     r_range = right_config->max - right_config->min;
 
     // distance from max height to current
-    l_gap = left_config->max - (int32_t)adc_average->left;
+    l_gap = left_config->max - adc_average->left;
 
     // constrain gap to maximum
     if (l_gap < 0) {
       l_gap = 0;
     }
-    r_gap = right_config->max - (int32_t)adc_average->right;
+    r_gap = right_config->max - adc_average->right;
     if (r_gap < 0) {
       r_gap = 0;
     }
@@ -114,10 +114,10 @@ void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, Key
     } else if (adc_average->right > right_config->max) {
       adc_average->right = right_config->max;
     }
-    xSemaphoreGive(config_mutex);
 
     xSemaphoreTake(key_buf_mut, portMAX_DELAY);
     process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left, left_config);
     process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right, right_config);
     xSemaphoreGive(key_buf_mut);
+    xSemaphoreGive(config_mutex);
 }

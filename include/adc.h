@@ -51,6 +51,6 @@ typedef struct {
   int32_t right;
 } AdcAverage;
 
-void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config);
+void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, const AdcConfig *left_config, const AdcConfig *right_config);
 
 #endif
