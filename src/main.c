@@ -52,10 +52,12 @@ int main() {
   tusb_init();
 
   // keypad config/setup
-  left_config.max = 3081;
-  left_config.min = 160;
-  right_config.max = 3205;
-  right_config.min = 140;
+  left_config.max = 3080;
+  left_config.max = 2780;
+  left_config.min = 150;
+  right_config.max = 3250;
+  right_config.max = 2950;
+  right_config.min = 350;
   key_buffers.left = 0;
   key_buffers.right = 0;
 
@@ -112,18 +114,18 @@ int main() {
 //--------------------------------------------------------------------+
 
 void adc_task_entry(void *pvParameters) {
-  TickType_t LastWakeTime;
-  const TickType_t xFrequency = 2;
-  LastWakeTime = xTaskGetTickCount();
+  // TickType_t LastWakeTime;
+  // const TickType_t xFrequency = 2;
+  // LastWakeTime = xTaskGetTickCount();
   while (1) {
-    vTaskDelayUntil(&LastWakeTime, xFrequency);
+    vTaskDelay(1);
     adc_task(key_buffers_mutex, config_mutex, &key_buffers, &adc_average, &adc_ranges, &left_config, &right_config);
   }
 }
 
 void usb_task_entry(void *pvParameters) {
   TickType_t LastWakeTime;
-  const TickType_t xFrequency = 10;
+  const TickType_t xFrequency = 5;
   LastWakeTime = xTaskGetTickCount();
   while (1) {
     vTaskDelayUntil(&LastWakeTime, xFrequency);

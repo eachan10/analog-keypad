@@ -11,7 +11,7 @@
 
 // offset caused by other key being pressed all the way down to key sensor value
 #define KEY_INTERFERENCE_L 300 
-#define KEY_INTERFERENCE_R 300 
+#define KEY_INTERFERENCE_R 270 
 
 
 //--------------------------------------------------------------------+
@@ -40,7 +40,7 @@ static int32_t average_buffer(const uint16_t *buf, size_t buf_size, uint8_t div_
 }
 
 
-static void process_key(uint8_t *key_buf, AdcRange *adc_range, const int32_t adc_val, const AdcConfig *adc_config) {
+static void process_key(uint8_t *key_buf, AdcRange *adc_range, const double adc_val, const AdcConfig *adc_config) {
   // map inverse square distance to linear function from 0 to 100
   double percentage = 100 - 100 * sqrt((adc_config->max - (double)adc_val) / (adc_config->max - adc_config->min));
 
@@ -65,7 +65,9 @@ static void process_key(uint8_t *key_buf, AdcRange *adc_range, const int32_t adc
 }
 
 // ADC Task
-void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, const AdcConfig *left_config, const AdcConfig *right_config) {
+void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config) {
+    static double adc1_val = 0;
+    static double adc2_val = 0;
     uint16_t adc_buf1[ADC_BUF_SIZE];
     uint16_t adc_buf2[ADC_BUF_SIZE];
     // left key read + average
@@ -73,6 +75,7 @@ void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, Key
     adc_capture(adc_buf1, ADC_BUF_SIZE);
 
     // right key read + average
+    vTaskDelay(1);
     adc_select_input(KEY_ADC_INPUT_R);
     adc_capture(adc_buf2, ADC_BUF_SIZE);
 
@@ -80,6 +83,15 @@ void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, Key
     // process adc values into key buffers
     adc_average->left = average_buffer(adc_buf1, ADC_BUF_SIZE, ADC_BUF_SHIFT);
     adc_average->right = average_buffer(adc_buf2, ADC_BUF_SIZE, ADC_BUF_SHIFT);
+    
+    // // adjust adc config values
+    // if (adc_average->left < left_config->min) {
+    //   left_config->min = adc_average->left;
+    // }
+    // if (adc_average->right < right_config->min) {
+    //   right_config->min = adc_average->right;
+    // }
+
 
     int32_t l_off, r_off, l_range, r_range, l_gap, r_gap;
     l_range = left_config->max - left_config->min;
@@ -115,9 +127,12 @@ void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, Key
       adc_average->right = right_config->max;
     }
 
+    adc1_val = (1 - 0.95) * adc1_val + 0.95 * (double)adc_average->left;
+    adc2_val = (1 - 0.95) * adc2_val + 0.95 * (double)adc_average->right;
+
     xSemaphoreTake(key_buf_mut, portMAX_DELAY);
-    process_key(&(key_buf->left), &(adc_ranges->left), adc_average->left, left_config);
-    process_key(&(key_buf->right), &(adc_ranges->right), adc_average->right, right_config);
+    process_key(&(key_buf->left), &(adc_ranges->left), adc1_val, left_config);
+    process_key(&(key_buf->right), &(adc_ranges->right), adc2_val, right_config);
     xSemaphoreGive(key_buf_mut);
     xSemaphoreGive(config_mutex);
 }
