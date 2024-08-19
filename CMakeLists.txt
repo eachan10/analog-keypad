@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(FAMILY rp2040)
 set(BOARD pico_sdk)
 
-add_compile_options(-Wall)
+add_compile_options(-Wall -O2)
 
 # Creates a pico-sdk subdirectory in our project for the libraries
 pico_sdk_init()

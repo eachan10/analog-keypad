@@ -15,19 +15,11 @@
 #include "adc.h"
 #include "usb.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-
-
 Keys keys;
 KeyBuffers key_buffers;
 
-// auto_init_mutex(key_buffers_mutex);
-
-SemaphoreHandle_t key_buffers_mutex;
-SemaphoreHandle_t config_mutex;
-
+auto_init_mutex(key_buffers_mutex);
+auto_init_mutex(config_mutex);
 
 AdcAverage adc_average;
 AdcRanges adc_ranges;
@@ -35,13 +27,10 @@ AdcRanges adc_ranges;
 AdcConfig left_config;
 AdcConfig right_config;
 
-
+void core1_entry();
 void hid_task_empty();
 
 static bool is_valid_hid_key_code(uint8_t keycode);
-
-void adc_task_entry(void *pvParameters);
-void usb_task_entry(void *pvParameters);
 
 
 int main() {
@@ -62,49 +51,27 @@ int main() {
   key_buffers.right = 0;
 
   // configurable options
-  left_config.threshold = 75.0;
-  left_config.reset = 5.0;
-  right_config.threshold = 75.0;
-  right_config.reset = 5.0;
+  left_config.threshold = (left_config.max - left_config.min) * 750 / 1000 + left_config.min;
+  left_config.reset = (left_config.max - left_config.min) * 50 / 1000;
+  right_config.threshold = (right_config.max - right_config.min) * 750 / 1000 + right_config.min;
+  right_config.reset = (right_config.max - right_config.min) * 50 / 1000;
   keys.left = HID_KEY_PERIOD;
   keys.right = HID_KEY_SLASH;
 
-  adc_ranges.left.max = 100;
-  adc_ranges.left.min = 0;
-  adc_ranges.right.max = 100;
-  adc_ranges.right.min = 0;
+  adc_ranges.left.max = 0;
+  adc_ranges.left.min = left_config.max;
+  adc_ranges.right.max = 0;
+  adc_ranges.right.min = right_config.max;
 
   adc_init();
   adc_gpio_init(KEY_PIN_L);
   adc_gpio_init(KEY_PIN_R);
 
-  key_buffers_mutex = xSemaphoreCreateMutex();
-  config_mutex = xSemaphoreCreateMutex();
-  
-  // multicore_launch_core1(core1_entry);
-
-  xTaskCreate(
-    adc_task_entry,
-    "ADC_TASK",
-    256,
-    NULL,
-    1,
-    NULL
-  );
-
-  xTaskCreate(
-    usb_task_entry,
-    "USB_TASK",
-    256,
-    NULL,
-    2,
-    NULL
-  );
-
-  vTaskStartScheduler();
+  multicore_launch_core1(core1_entry);
 
   while (1) {
-    // usb_task(&key_buffers_mutex, &key_buffers, &keys);
+    usb_task(&key_buffers_mutex, &key_buffers, &keys);
+    sleep_us(100);
   }
 }
 
@@ -113,23 +80,11 @@ int main() {
 // Tasks
 //--------------------------------------------------------------------+
 
-void adc_task_entry(void *pvParameters) {
-  // TickType_t LastWakeTime;
-  // const TickType_t xFrequency = 2;
-  // LastWakeTime = xTaskGetTickCount();
+void core1_entry() {
   while (1) {
-    vTaskDelay(1);
-    adc_task(key_buffers_mutex, config_mutex, &key_buffers, &adc_average, &adc_ranges, &left_config, &right_config);
-  }
-}
-
-void usb_task_entry(void *pvParameters) {
-  TickType_t LastWakeTime;
-  const TickType_t xFrequency = 5;
-  LastWakeTime = xTaskGetTickCount();
-  while (1) {
-    vTaskDelayUntil(&LastWakeTime, xFrequency);
-    usb_task(key_buffers_mutex, &key_buffers, &keys);
+    adc_task(&key_buffers_mutex, &config_mutex, &key_buffers, &adc_average, &adc_ranges, &left_config, &right_config);
+    // adc_task(&key_buffers_mutex, &key_buffers, &adc_average, &adc_ranges, &left_config, &right_config);
+    sleep_us(20);
   }
 }
 
@@ -159,18 +114,18 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x11:
       // return values read by adc
       memcpy(new_buf, buffer, bufsize);
-      xSemaphoreTake(config_mutex, portMAX_DELAY);
+      mutex_enter_blocking(&config_mutex);
       memcpy(&new_buf[2], &adc_average.left, sizeof(adc_average.left));
       memcpy(&new_buf[2+sizeof(adc_average.left)], &adc_average.right, sizeof(adc_average.right));
-      xSemaphoreGive(config_mutex);
+      mutex_exit(&config_mutex);
       break;
     case 0x12:
       // set keys left and right should be in bytes 1 and 2
       if (is_valid_hid_key_code(buffer[1]) && is_valid_hid_key_code(buffer[2])) {
-        xSemaphoreTake(key_buffers_mutex, portMAX_DELAY);
+        mutex_enter_blocking(&key_buffers_mutex);
         keys.left = buffer[1];
         keys.right = buffer[2];
-        xSemaphoreGive(key_buffers_mutex);
+        mutex_exit(&key_buffers_mutex);
         memcpy(new_buf, buffer, bufsize);  // echo on success
       }
       // returned report is all 0 if invalid keycodes
@@ -219,7 +174,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     case 0x01:
       // get current config settings
       // mutex_enter_blocking(&key_buffers_mutex);
-      xSemaphoreTake(config_mutex, portMAX_DELAY);
+      mutex_enter_blocking(&config_mutex);
       // byte 1 -> left keycode
       // byte 2 -> right keycode
       // byte 3 -> threshold percentage
@@ -248,7 +203,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         i += sizeof(right_config.min);
       }
       // mutex_exit(&key_buffers_mutex);
-      xSemaphoreGive(config_mutex);
+      mutex_exit(&config_mutex);
       break;
     }
     tud_hid_n_report(1, 0, new_buf, bufsize);

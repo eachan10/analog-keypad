@@ -6,9 +6,6 @@
 #include "pico/stdlib.h"
 #include "pico/sync.h"
 
-#include "FreeRTOS.h"
-#include "semphr.h"
-
 #define KEY_PIN_L         26      // ADC 0 pin
 #define KEY_ADC_INPUT_L   0       // ADC Input to select for right key
 #define KEY_PIN_R         27      // ADC 1 pin
@@ -20,11 +17,11 @@
 #define THRESHOLD_MULTIPLIER  3 / 4
 
 // value the buffer is set to when key is set
-#define MAX_KEY_BUFFER 1
+#define MAX_KEY_BUFFER 20
 
 typedef struct {
-  double threshold;
-  double reset;
+  int32_t threshold;
+  int32_t reset;
   int32_t max;
   int32_t min;
 } AdcConfig;
@@ -37,8 +34,8 @@ typedef struct {
 } KeyBuffers;
 
 typedef struct {
-  double min;        // lowest adc reading the key has reached while set
-  double max;        // highest adc reading the key has reached while unset
+  int32_t min;        // lowest adc reading the key has reached while set
+  int32_t max;        // highest adc reading the key has reached while unset
 } AdcRange;
 
 typedef struct {
@@ -51,6 +48,7 @@ typedef struct {
   int32_t right;
 } AdcAverage;
 
-void adc_task(SemaphoreHandle_t key_buf_mut, SemaphoreHandle_t config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config);
+void adc_task(mutex_t *key_buf_mut, mutex_t *config_mutex, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config);
+// void adc_task(mutex_t *key_buf_mut, KeyBuffers *key_buf, AdcAverage *adc_average, AdcRanges *adc_ranges, AdcConfig *left_config, AdcConfig *right_config);
 
 #endif
